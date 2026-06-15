@@ -1,5 +1,4 @@
-import { useState } from "react";
-import {useForm} from "react-hook-form";
+import { useForm, SubmitHandler } from "react-hook-form";
 
 type Props = {
   isOpen: boolean;
@@ -8,45 +7,55 @@ type Props = {
   loading?: boolean;
 };
 
+type CreateUserFormData = {
+  name: string;
+  email: string;
+};
 
 const CreateUserModal = ({
-    isOpen,
-    onClose,
-    onSubmit,
-    loading,
+  isOpen,
+  onClose,
+  onSubmit,
+  loading,
 }: Props) => {
-    
+  const { register, handleSubmit, reset } =
+    useForm<CreateUserFormData>();
 
-    const { register, handleSubmit } = useForm();
+  const handleFormSubmit: SubmitHandler<CreateUserFormData> =
+    async (data) => {
+      await onSubmit(data);
+      reset();
+    };
 
-    const handleFormSubmit = async (
-        data: { name: string; email: string }
-    ) => {
-        onSubmit(data);
-    };  
-       
+  if (!isOpen) return null;
 
-     return (
+  return (
     <div className="fixed inset-0 flex items-center justify-center bg-black/50">
       <div className="bg-white rounded-lg p-6 w-full max-w-md">
-        <h2 className="text-xl font-bold mb-4">Create User</h2>
+        <h2 className="text-xl font-bold mb-4">
+          Create User
+        </h2>
 
-        <form onSubmit={handleSubmit(handleFormSubmit)} className="space-y-4">
+        <form
+          onSubmit={handleSubmit(handleFormSubmit)}
+          className="space-y-4"
+        >
           <input
             type="text"
             placeholder="Name"
             className="w-full border p-2 rounded"
-            {...register("name")}
-            // onChange={(e) => setName(e.target.value)}
+            {...register("name", {
+              required: "Name is required",
+            })}
           />
 
           <input
             type="email"
             placeholder="Email"
             className="w-full border p-2 rounded"
-            {...register("email")}
-            // value={email}
-            // onChange={(e) => setEm   ail(e.target.value)}
+            {...register("email", {
+              required: "Email is required",
+            })}
           />
 
           <div className="flex justify-end gap-2">
