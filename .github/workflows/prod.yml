@@ -84,7 +84,7 @@ jobs:
             if [ $? -eq 0 ]; then
               pm2 restart practice-frontend
             else
-              pm2 start dist/main.js --name practice-frontend
+              pm2 start "npm start" --name practice-frontend
             fi
 
             echo "Saving PM2..."
