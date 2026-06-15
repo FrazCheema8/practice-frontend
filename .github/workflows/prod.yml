@@ -6,114 +6,114 @@ on:
     - main
 jobs:
   build-and-deploy:
-  runs-on: ubuntu-latest
-  steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-    - name: Set up Node.js
-      uses: actions/setup-node@v3
-      with:
-        node-version: '22'
-    - name: install dependencies
-      run: npm install
-    - name: Build the app
-      run: npm run build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '22'
+      - name: install dependencies
+        run: npm install
+      - name: Build the app
+        run: npm run build
 
-      # Create deployment archive
-    - name: Archive build
-      run: tar -czf frontend-build.tar.gz .next public package.json package-lock.json
+        # Create deployment archive
+      - name: Archive build
+        run: tar -czf frontend-build.tar.gz .next public package.json package-lock.json
 
-      # Create SSH private key
-    - name: Create private-key.pem
-      run: |
-        echo "${{ secrets.PROD_PRIVATE_KEY }}" > private-key.pem
-        chmod 400 private-key.pem
+        # Create SSH private key
+      - name: Create private-key.pem
+        run: |
+          echo "${{ secrets.PROD_PRIVATE_KEY }}" > private-key.pem
+          chmod 400 private-key.pem
 
-      # Get GitHub Actions runner public IP
-    - name: Get Runner Public IP
-      id: ip
-      run: |
-        ip=$(curl -s https://api.ipify.org)
-        echo "ip=$ip" >> $GITHUB_OUTPUT
+        # Get GitHub Actions runner public IP
+      - name: Get Runner Public IP
+        id: ip
+        run: |
+          ip=$(curl -s https://api.ipify.org)
+          echo "ip=$ip" >> $GITHUB_OUTPUT
 
-      # Temporarily allow SSH access
-    - name: Allow SSH from GitHub Actions runner
-      run: |
-        aws ec2 authorize-security-group-ingress \
-          --group-id ${{ secrets.AWS_SECURITY_GROUP_ID_PROD }} \
-          --protocol tcp \
-          --port 22 \
-          --cidr ${{ steps.ip.outputs.ip }}/32
-      env:
-        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID_GITHUB_USER }}
-        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY_GITHUB_USER }}
-        AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
+        # Temporarily allow SSH access
+      - name: Allow SSH from GitHub Actions runner
+        run: |
+          aws ec2 authorize-security-group-ingress \
+            --group-id ${{ secrets.AWS_SECURITY_GROUP_ID_PROD }} \
+            --protocol tcp \
+            --port 22 \
+            --cidr ${{ steps.ip.outputs.ip }}/32
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID_GITHUB_USER }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY_GITHUB_USER }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
 
-      # Deploy application
-    - name: Deploy to EC2
-      env:
-        DEPLOY_SERVER: ubuntu@56.228.55.144
-        DEPLOY_PATH: /home/ubuntu/practice-frontend
-      run: |
+        # Deploy application
+      - name: Deploy to EC2
+        env:
+          DEPLOY_SERVER: ubuntu@56.228.55.144
+          DEPLOY_PATH: /home/ubuntu/practice-frontend
+        run: |
 
-        echo "Uploading build archive..."
+          echo "Uploading build archive..."
 
-        rsync -avz \
-          -e "ssh -i private-key.pem -o StrictHostKeyChecking=no" \
-          frontend-build.tar.gz \
-          $DEPLOY_SERVER:$DEPLOY_PATH/
+          rsync -avz \
+            -e "ssh -i private-key.pem -o StrictHostKeyChecking=no" \
+            frontend-build.tar.gz \
+            $DEPLOY_SERVER:$DEPLOY_PATH/
 
-        echo "Connecting to EC2 and deploying..."
+          echo "Connecting to EC2 and deploying..."
 
-        ssh -i private-key.pem -o StrictHostKeyChecking=no $DEPLOY_SERVER << 'EOF'
+          ssh -i private-key.pem -o StrictHostKeyChecking=no $DEPLOY_SERVER << 'EOF'
 
-          set -e
+            set -e
 
-          cd /home/ubuntu/practice-frontend
+            cd /home/ubuntu/practice-frontend
 
-          echo "Extracting build..."
-          tar -xzf frontend-build.tar.gz
+            echo "Extracting build..."
+            tar -xzf frontend-build.tar.gz
 
-          echo "Installing production dependencies..."
-          npm install --omit=dev
+            echo "Installing production dependencies..."
+            npm install --omit=dev
 
-          echo "Restarting PM2..."
+            echo "Restarting PM2..."
 
-          pm2 describe practice-frontend > /dev/null 2>&1
+            pm2 describe practice-frontend > /dev/null 2>&1
 
-          if [ $? -eq 0 ]; then
-            pm2 restart practice-frontend
-          else
-            pm2 start dist/main.js --name practice-frontend
-          fi
+            if [ $? -eq 0 ]; then
+              pm2 restart practice-frontend
+            else
+              pm2 start dist/main.js --name practice-frontend
+            fi
 
-          echo "Saving PM2..."
-          pm2 save
+            echo "Saving PM2..."
+            pm2 save
 
-          echo "Removing archive..."
+            echo "Removing archive..."
+            rm -f frontend-build.tar.gz
+
+            echo "Deployment completed successfully."
+
+          EOF
+
+        # Remove temporary SSH rule
+      - name: Remove runner IP from SG
+        if: always()
+        run: |
+          aws ec2 revoke-security-group-ingress \
+            --group-id ${{ secrets.AWS_SECURITY_GROUP_ID_PROD }} \
+            --protocol tcp \
+            --port 22 \
+            --cidr ${{ steps.ip.outputs.ip }}/32
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID_GITHUB_USER }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY_GITHUB_USER }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
+
+        # Cleanup runner files
+      - name: Clean up
+        if: always()
+        run: |
+          rm -f private-key.pem
           rm -f frontend-build.tar.gz
-
-          echo "Deployment completed successfully."
-
-        EOF
-
-      # Remove temporary SSH rule
-    - name: Remove runner IP from SG
-      if: always()
-      run: |
-        aws ec2 revoke-security-group-ingress \
-          --group-id ${{ secrets.AWS_SECURITY_GROUP_ID_PROD }} \
-          --protocol tcp \
-          --port 22 \
-          --cidr ${{ steps.ip.outputs.ip }}/32
-      env:
-        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID_GITHUB_USER }}
-        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY_GITHUB_USER }}
-        AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
-
-      # Cleanup runner files
-    - name: Clean up
-      if: always()
-      run: |
-        rm -f private-key.pem
-        rm -f frontend-build.tar.gz
